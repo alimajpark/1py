@@ -1,12 +1,15 @@
-// --- 优化和调试版本 ---
+// --- 最终修正：解决了变量命名冲突的版本 ---
 
 const canvas = document.querySelector('#c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 const scene = new THREE.Scene();
+
+// 这是3D场景的“眼睛”
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.z = 150;
-const PARTICLE_COUNT = 15000; // 稍微降低粒子数以提升手机性能
+
+const PARTICLE_COUNT = 15000;
 let particlesGeometry = new THREE.BufferGeometry();
 let targetPositions = new Float32Array(PARTICLE_COUNT * 3);
 let currentPositions = new Float32Array(PARTICLE_COUNT * 3);
@@ -114,44 +117,38 @@ const hands = new Hands({
 });
 hands.setOptions({
     maxNumHands: 1,
-    modelComplexity: 0, // --- 优化点：降低模型复杂度，提升手机性能
-    minDetectionConfidence: 0.6, // 稍微提高检测置信度
-    minTrackingConfidence: 0.6, // 稍微提高跟踪置信度
+    modelComplexity: 0,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6,
 });
 hands.onResults(onResults);
-const camera = new Camera(videoElement, {
+
+// 这是启动手机摄像头的“帮手”，我们把它改回了正确的名字 cameraHelper
+const cameraHelper = new Camera(videoElement, {
     onFrame: async () => {
         await hands.send({ image: videoElement });
     },
-    width: 640,  // --- 优化点：使用较低分辨率处理视频
-    height: 480, // --- 优化点：使用较低分辨率处理视频
+    width: 640,
+    height: 480,
 });
-camera.start();
+cameraHelper.start();
+
 function onResults(results) {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         const landmarks = results.multiHandLandmarks[0];
-        // 计算拇指指尖(4)和食指指尖(8)的距离
         const p1 = landmarks[4];
         const p2 = landmarks[8];
         const distance = Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
-
-        // 调试信息：打印出计算的距离
-        // console.log("Detected hand distance:", distance);
-
-        // --- 优化点：调整映射范围以适应手机上的近距离操作
         const targetScale = THREE.MathUtils.mapLinear(distance, 0.03, 0.25, 0.2, 2.0);
         handScale = THREE.MathUtils.clamp(targetScale, 0.2, 2.5);
     } else {
-        // 如果没有手，慢慢恢复到默认大小
         handScale = 1.0;
     }
 }
-let currentScale = 1.0; // 使用一个新变量来平滑过渡
+let currentScale = 1.0;
 function animate() {
     requestAnimationFrame(animate);
-    // 平滑处理缩放，让过渡更自然
     currentScale = THREE.MathUtils.lerp(currentScale, handScale, 0.1);
-
     const positions = particles.geometry.attributes.position.array;
     for (let i = 0; i < PARTICLE_COUNT; i++) {
         const i3 = i * 3;
