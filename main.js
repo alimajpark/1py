@@ -1,10 +1,12 @@
+// --- 优化和调试版本 ---
+
 const canvas = document.querySelector('#c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.z = 150;
-const PARTICLE_COUNT = 20000;
+const PARTICLE_COUNT = 15000; // 稍微降低粒子数以提升手机性能
 let particlesGeometry = new THREE.BufferGeometry();
 let targetPositions = new Float32Array(PARTICLE_COUNT * 3);
 let currentPositions = new Float32Array(PARTICLE_COUNT * 3);
@@ -112,41 +114,50 @@ const hands = new Hands({
 });
 hands.setOptions({
     maxNumHands: 1,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5
+    modelComplexity: 0, // --- 优化点：降低模型复杂度，提升手机性能
+    minDetectionConfidence: 0.6, // 稍微提高检测置信度
+    minTrackingConfidence: 0.6, // 稍微提高跟踪置信度
 });
 hands.onResults(onResults);
-const cameraHelper = new Camera(videoElement, {
+const camera = new Camera(videoElement, {
     onFrame: async () => {
         await hands.send({ image: videoElement });
     },
-    width: 1280,
-    height: 720
+    width: 640,  // --- 优化点：使用较低分辨率处理视频
+    height: 480, // --- 优化点：使用较低分辨率处理视频
 });
-cameraHelper.start();
+camera.start();
 function onResults(results) {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         const landmarks = results.multiHandLandmarks[0];
+        // 计算拇指指尖(4)和食指指尖(8)的距离
         const p1 = landmarks[4];
         const p2 = landmarks[8];
         const distance = Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
-        const targetScale = THREE.MathUtils.mapLinear(distance, 0.05, 0.3, 0.2, 2.5);
+
+        // 调试信息：打印出计算的距离
+        // console.log("Detected hand distance:", distance);
+
+        // --- 优化点：调整映射范围以适应手机上的近距离操作
+        const targetScale = THREE.MathUtils.mapLinear(distance, 0.03, 0.25, 0.2, 2.0);
         handScale = THREE.MathUtils.clamp(targetScale, 0.2, 2.5);
     } else {
+        // 如果没有手，慢慢恢复到默认大小
         handScale = 1.0;
     }
 }
-let targetScale = 1.0;
+let currentScale = 1.0; // 使用一个新变量来平滑过渡
 function animate() {
     requestAnimationFrame(animate);
-    targetScale = THREE.MathUtils.lerp(targetScale, handScale, 0.1);
+    // 平滑处理缩放，让过渡更自然
+    currentScale = THREE.MathUtils.lerp(currentScale, handScale, 0.1);
+
     const positions = particles.geometry.attributes.position.array;
     for (let i = 0; i < PARTICLE_COUNT; i++) {
         const i3 = i * 3;
-        positions[i3]     = THREE.MathUtils.lerp(positions[i3], targetPositions[i3] * targetScale, 0.07);
-        positions[i3 + 1] = THREE.MathUtils.lerp(positions[i3 + 1], targetPositions[i3 + 1] * targetScale, 0.07);
-        positions[i3 + 2] = THREE.MathUtils.lerp(positions[i3 + 2], targetPositions[i3 + 2] * targetScale, 0.07);
+        positions[i3]     = THREE.MathUtils.lerp(positions[i3], targetPositions[i3] * currentScale, 0.07);
+        positions[i3 + 1] = THREE.MathUtils.lerp(positions[i3 + 1], targetPositions[i3 + 1] * currentScale, 0.07);
+        positions[i3 + 2] = THREE.MathUtils.lerp(positions[i3 + 2], targetPositions[i3 + 2] * currentScale, 0.07);
     }
     particles.geometry.attributes.position.needsUpdate = true;
     particles.rotation.y += 0.0005;
